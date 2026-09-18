@@ -1,0 +1,11 @@
+[workspace]
+resolver = "3"
+members = ["app", "installer"]
+
+
+[profile.release]
+opt-level = "z"     # Optimiert aggressiv auf minimale Größe (alternativ "s")
+lto = true          # Aktiviert Link-Time Optimization über alle Crates hinweg
+codegen-units = 1   # Reduziert parallele Code-Generierung, erlaubt bessere Optimierung
+panic = "abort"     # Entfernt den Stack-Unwinding-Code bei Panics
+strip = true        # Entfernt automatisch alle Symbole und Debug-Informationen

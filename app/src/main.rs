@@ -1,27 +1,16 @@
-mod auth;
-mod config;
-mod gui;
-mod network;
-mod system;
-
-use std::env;
+use wifi_scan
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.iter().any(|arg| arg == "--config") {
-        if let Err(error) = gui::run_config_window() {
-            eprintln!("GUI konnte nicht gestartet werden: {error}");
-
-            std::process::exit(1);
+    match wifi_scan::scan() {
+        Ok(networks) => {
+            // Sucht nach dem Netzwerk, mit dem du gerade aktiv verbunden bist
+            if let Some(current) = networks.iter().find(|n| n.is_connected) {
+                println!("Verbunden mit WLAN: {}", current.ssid);
+            } else {
+                println!("Mit keinem WLAN verbunden.");
+            }
         }
-
-        return;
-    }
-
-    if let Err(error) = auth::run_pinger() {
-        eprintln!("Pinger-Fehler: {error}");
-
-        std::process::exit(1);
+        Err(e) => println!("Fehler beim Auslesen: {:?}", e),
     }
 }
+

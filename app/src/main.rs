@@ -9,11 +9,11 @@ async fn main() {
 
         // 2. Aktuellen Status abfragen
         let aktueller_status = network::status(status_url).await;
-        println!("Aktueller Status: {:?}", aktueller_status);
+        dbg!("Aktueller Status: {:?}", &aktueller_status);
 
         match aktueller_status {
             network::ClientState::Not_Authorized => {
-                println!("Nicht eingeloggt! Starte Autologin-Sequenz...");
+                dbg!("Nicht eingeloggt! Starte Autologin-Sequenz...");
 
                 let username = "";
                 let password = "";
@@ -22,19 +22,19 @@ async fn main() {
                 let login_status = network::login(login_url, username, password).await;
                 
                 if login_status == network::ClientState::Authorized {
-                    println!("Login erfolgreich!");
+                    dbg!("Login erfolgreich!");
                 } else {
-                    println!("Login fehlgeschlagen. Status: {:?}", login_status);
+                    dbg!("Login fehlgeschlagen. Status: {:?}", login_status);
                 }
             }
             network::ClientState::Authorized => {
-                println!("Bereits erfolgreich authentifiziert.");
+                dbg!("Bereits erfolgreich authentifiziert.");
             }
             network::ClientState::Unknown => {
-                println!("Status unklar..");
+                dbg!("Status unklar..");
             }
         }
     } else {
-        println!("Nicht mit dem 'ohg' WLAN verbunden.");
+        dbg!("Nicht mit dem 'ohg' WLAN verbunden.");
     }
 }

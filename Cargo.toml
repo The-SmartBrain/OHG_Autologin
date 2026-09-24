@@ -5,7 +5,7 @@ members = ["app"]
 
 
 [profile.release]
-opt-level = "z"     # Optimiert aggressiv auf minimale Größe (alternativ "s")
+opt-level = 3     # Optimiert aggressiv auf minimale Größe (alternativ "s")
 lto = true          # Aktiviert Link-Time Optimization über alle Crates hinweg
 codegen-units = 1   # Reduziert parallele Code-Generierung, erlaubt bessere Optimierung
 panic = "abort"     # Entfernt den Stack-Unwinding-Code bei Panics

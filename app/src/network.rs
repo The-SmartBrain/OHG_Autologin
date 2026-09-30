@@ -1,10 +1,14 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "UPPERCASE")] 
 pub enum ClientState {
+    #[serde(rename = "AUTHORIZED")]
     Authorized,
-    Not_Authorized,
+
+    #[serde(rename = "NOT_AUTHORIZED")]
+    NotAuthorized,
+
+    #[serde(rename = "UNKNOWN")]
     Unknown,
 }
 
@@ -37,7 +41,9 @@ pub fn ohg_wifi() -> bool {
 }
 
 /// Sendet eine POST-Anfrage mit leeren Benutzerdaten an die Status-URL
-pub async fn status(url: &str) -> ClientState {
+pub async fn status() -> ClientState {
+    let url = "http://10.80.0.1:8000/api/captiveportal/access/status/";
+
     if cfg!(debug_assertions) {
         println!("DEBUG: Sende Status-POST-Abfrage an: {}", url);
     }
@@ -47,27 +53,25 @@ pub async fn status(url: &str) -> ClientState {
     let form_data = [("user", ""), ("password", "")];
 
     match client.post(url).form(&form_data).send().await {
-        Ok(response) => {
-            match response.text().await {
-                Ok(raw_text) => {
-                    if cfg!(debug_assertions) {
-                        println!("DEBUG - Rohe Server-Antwort: {}", raw_text);
-                    }
-
-                    match serde_json::from_str::<ApiResponse>(&raw_text) {
-                        Ok(api_data) => api_data.client_state,
-                        Err(e) => {
-                            eprintln!("Fehler beim Parsen des JSON-Status: {}", e);
-                            ClientState::Unknown
-                        }
-                    }
+        Ok(response) => match response.text().await {
+            Ok(raw_text) => {
+                if cfg!(debug_assertions) {
+                    println!("DEBUG - Rohe Server-Antwort: {}", raw_text);
                 }
-                Err(e) => {
-                    eprintln!("Konnte Antwort-Text nicht lesen: {}", e);
-                    ClientState::Unknown
+
+                match serde_json::from_str::<ApiResponse>(&raw_text) {
+                    Ok(api_data) => api_data.client_state,
+                    Err(e) => {
+                        eprintln!("Fehler beim Parsen des JSON-Status: {}", e);
+                        ClientState::Unknown
+                    }
                 }
             }
-        }
+            Err(e) => {
+                eprintln!("Konnte Antwort-Text nicht lesen: {}", e);
+                ClientState::Unknown
+            }
+        },
         Err(e) => {
             eprintln!("HTTP-Verbindungsfehler bei POST-Status-Abfrage: {}", e);
             ClientState::Unknown
@@ -77,7 +81,9 @@ pub async fn status(url: &str) -> ClientState {
 
 /// Sendet eine POST-Anfrage mit den Zugangsdaten
 /// Gibt den neuen `ClientState` nach dem Anmeldeversuch zurück.
-pub async fn login(url: &str, benutzername: &str, passwort: &str) -> ClientState {
+pub async fn login(benutzername: &str, passwort: &str) -> ClientState {
+    let url = "http://10.80.0.1:8000/api/captiveportal/access/logon/";
+
     if cfg!(debug_assertions) {
         println!("DEBUG: Sende Login-POST-Anfrage an: {}", url);
     }
@@ -87,7 +93,7 @@ pub async fn login(url: &str, benutzername: &str, passwort: &str) -> ClientState
     let client = match reqwest::Client::builder()
         .user_agent(custom_user_agent)
         .danger_accept_invalid_certs(true) // Ohne gültiges Zertifikat
-        .build() 
+        .build()
     {
         Ok(c) => c,
         Err(e) => {
@@ -97,38 +103,31 @@ pub async fn login(url: &str, benutzername: &str, passwort: &str) -> ClientState
     };
 
     // Die Formulardaten für das OPNsense-Portal
-    let form_data = [
-        ("user", benutzername),
-        ("password", passwort)
-    ];
+    let form_data = [("user", benutzername), ("password", passwort)];
 
     match client.post(url).form(&form_data).send().await {
-        Ok(response) => {
-            match response.text().await {
-                Ok(raw_text) => {
-                    if cfg!(debug_assertions) {
-                        println!("DEBUG - Rohe Login-Antwort: {}", raw_text);
-                    }
-
-                    match serde_json::from_str::<ApiResponse>(&raw_text) {
-                        Ok(api_data) => api_data.client_state,
-                        Err(e) => {
-                            eprintln!("Fehler beim Parsen der Login-Antwort: {}", e);
-                            ClientState::Unknown
-                        }
-                    }
+        Ok(response) => match response.text().await {
+            Ok(raw_text) => {
+                if cfg!(debug_assertions) {
+                    println!("DEBUG - Rohe Login-Antwort: {}", raw_text);
                 }
-                Err(e) => {
-                    eprintln!("Konnte Login-Antworttext nicht lesen: {}", e);
-                    ClientState::Unknown
+
+                match serde_json::from_str::<ApiResponse>(&raw_text) {
+                    Ok(api_data) => api_data.client_state,
+                    Err(e) => {
+                        eprintln!("Fehler beim Parsen der Login-Antwort: {}", e);
+                        ClientState::Unknown
+                    }
                 }
             }
-        }
+            Err(e) => {
+                eprintln!("Konnte Login-Antworttext nicht lesen: {}", e);
+                ClientState::Unknown
+            }
+        },
         Err(e) => {
             eprintln!("HTTP-Verbindungsfehler beim Login-POST: {}", e);
             ClientState::Unknown
         }
     }
 }
-
-

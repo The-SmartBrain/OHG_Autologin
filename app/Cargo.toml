@@ -17,6 +17,10 @@ ssid = "0.1"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"]}
 clap = { version = "4", features = ["derive"] }
+tempfile = "3"
 
 [features]
 test-system = []
+
+[dev-dependencies]
+tempfile = "3"

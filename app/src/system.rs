@@ -1,6 +1,12 @@
+use std::process::Command;
+
 #[cfg(target_os = "linux")]
 mod platform {
-    use std::{env, fs, path::PathBuf, process::Command};
+    use std::{
+        env, fs,
+        path::PathBuf,
+        process::{Command, Output},
+    };
 
     const SERVICE_NAME: &str = "ohg-autologin.service";
 
@@ -13,8 +19,8 @@ mod platform {
             .join("user"))
     }
 
-    fn service_path() -> Result<PathBuf, String> {
-        Ok(service_directory()?.join(SERVICE_NAME))
+    fn service_path(name: &str) -> Result<PathBuf, String> {
+        Ok(service_directory()?.join(name))
     }
 
     fn run_systemctl(args: &[&str]) -> Result<(), String> {
@@ -33,7 +39,7 @@ mod platform {
         Ok(())
     }
 
-    fn run_systemctl_output(args: &[&str]) -> Result<std::process::Output, String> {
+    fn run_systemctl_output(args: &[&str]) -> Result<Output, String> {
         Command::new("systemctl")
             .args(["--user"])
             .args(args)
@@ -43,16 +49,24 @@ mod platform {
 
     fn executable_path() -> Result<PathBuf, String> {
         env::current_exe()
-            .map_err(|e| format!("Pfad des Programms konnte nicht ermittelt werden: {}", e))
+            .map_err(|e| format!("Programm-Pfad konnte nicht ermittelt werden: {}", e))
     }
 
-    pub fn install() -> Result<(), String> {
+    fn install_with_definition(
+        name: &str,
+        executable: &str,
+        arguments: &[&str],
+    ) -> Result<(), String> {
         let directory = service_directory()?;
 
         fs::create_dir_all(&directory)
             .map_err(|e| format!("Systemd-Verzeichnis konnte nicht erstellt werden: {}", e))?;
 
-        let executable = executable_path()?;
+        let exec_start = if arguments.is_empty() {
+            format!("\"{}\"", executable)
+        } else {
+            format!("\"{}\" {}", executable, arguments.join(" "))
+        };
 
         let service = format!(
             r#"[Unit]
@@ -62,72 +76,157 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart="{}"
+ExecStart={}
 Restart=no
 
 [Install]
 WantedBy=default.target
 "#,
-            executable.display()
+            exec_start
         );
 
-        fs::write(service_path()?, service)
+        fs::write(service_path(name)?, service)
             .map_err(|e| format!("Systemd-Service konnte nicht geschrieben werden: {}", e))?;
 
-        run_systemctl(&["daemon-reload"])?;
-
-        Ok(())
+        run_systemctl(&["daemon-reload"])
     }
 
-    pub fn uninstall() -> Result<(), String> {
-        // Erst stoppen, falls er läuft.
-        let _ = stop();
+    fn install_named(name: &str) -> Result<(), String> {
+        let executable = executable_path()?;
 
-        // Dann deaktivieren.
-        let _ = disable();
+        install_with_definition(name, executable.to_string_lossy().as_ref(), &[])
+    }
 
-        let path = service_path()?;
+    fn uninstall_named(name: &str) -> Result<(), String> {
+        let _ = stop_named(name);
+        let _ = disable_named(name);
+
+        let path = service_path(name)?;
 
         if path.exists() {
             fs::remove_file(path)
                 .map_err(|e| format!("Systemd-Service konnte nicht gelöscht werden: {}", e))?;
         }
 
-        run_systemctl(&["daemon-reload"])?;
+        run_systemctl(&["daemon-reload"])
+    }
 
-        Ok(())
+    fn enable_named(name: &str) -> Result<(), String> {
+        run_systemctl(&["enable", name])
+    }
+
+    fn disable_named(name: &str) -> Result<(), String> {
+        run_systemctl(&["disable", name])
+    }
+
+    fn start_named(name: &str) -> Result<(), String> {
+        run_systemctl(&["start", name])
+    }
+
+    fn stop_named(name: &str) -> Result<(), String> {
+        run_systemctl(&["stop", name])
+    }
+
+    fn is_installed_named(name: &str) -> bool {
+        service_path(name)
+            .map(|path| path.exists())
+            .unwrap_or(false)
+    }
+
+    fn is_enabled_named(name: &str) -> Result<bool, String> {
+        Ok(run_systemctl_output(&["is-enabled", name])?
+            .status
+            .success())
+    }
+
+    fn is_running_named(name: &str) -> Result<bool, String> {
+        Ok(run_systemctl_output(&["is-active", name])?.status.success())
+    }
+
+    pub fn install() -> Result<(), String> {
+        install_named(SERVICE_NAME)
+    }
+
+    pub fn uninstall() -> Result<(), String> {
+        uninstall_named(SERVICE_NAME)
     }
 
     pub fn enable() -> Result<(), String> {
-        run_systemctl(&["enable", SERVICE_NAME])
+        enable_named(SERVICE_NAME)
     }
 
     pub fn disable() -> Result<(), String> {
-        run_systemctl(&["disable", SERVICE_NAME])
+        disable_named(SERVICE_NAME)
     }
 
     pub fn start() -> Result<(), String> {
-        run_systemctl(&["start", SERVICE_NAME])
+        start_named(SERVICE_NAME)
     }
 
     pub fn stop() -> Result<(), String> {
-        run_systemctl(&["stop", SERVICE_NAME])
+        stop_named(SERVICE_NAME)
     }
 
     pub fn is_installed() -> bool {
-        service_path().map(|path| path.exists()).unwrap_or(false)
+        is_installed_named(SERVICE_NAME)
     }
 
     pub fn is_enabled() -> Result<bool, String> {
-        let output = run_systemctl_output(&["is-enabled", SERVICE_NAME])?;
-
-        Ok(output.status.success())
+        is_enabled_named(SERVICE_NAME)
     }
 
     pub fn is_running() -> Result<bool, String> {
-        let output = run_systemctl_output(&["is-active", SERVICE_NAME])?;
+        is_running_named(SERVICE_NAME)
+    }
 
-        Ok(output.status.success())
+    pub mod testing {
+        use super::*;
+
+        const TEST_SERVICE_NAME: &str = "ohg-autologin-test.service";
+
+        pub fn install() -> Result<(), String> {
+            // `sleep` läuft lange genug, damit start/stop
+            // zuverlässig getestet werden können.
+            install_with_definition(TEST_SERVICE_NAME, "/usr/bin/sleep", &["300"])
+        }
+
+        pub fn uninstall() -> Result<(), String> {
+            uninstall_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn enable() -> Result<(), String> {
+            enable_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn disable() -> Result<(), String> {
+            disable_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn start() -> Result<(), String> {
+            start_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn stop() -> Result<(), String> {
+            stop_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn is_installed() -> bool {
+            is_installed_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn is_enabled() -> Result<bool, String> {
+            is_enabled_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn is_running() -> Result<bool, String> {
+            is_running_named(TEST_SERVICE_NAME)
+        }
+
+        pub fn cleanup() {
+            let _ = stop();
+            let _ = disable();
+            let _ = uninstall();
+        }
     }
 }
 
@@ -140,7 +239,7 @@ mod platform {
     fn executable_path() -> Result<String, String> {
         env::current_exe()
             .map(|path| path.to_string_lossy().to_string())
-            .map_err(|e| format!("Pfad des Programms konnte nicht ermittelt werden: {}", e))
+            .map_err(|e| format!("Programm-Pfad konnte nicht ermittelt werden: {}", e))
     }
 
     fn run_schtasks(args: &[&str]) -> Result<(), String> {
@@ -152,35 +251,32 @@ mod platform {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            return Err(format!(
-                "Windows Aufgabenplanung fehlgeschlagen: {}",
-                stderr.trim()
-            ));
+            return Err(format!("Aufgabenplanung fehlgeschlagen: {}", stderr.trim()));
         }
 
         Ok(())
     }
 
-    fn query_task() -> Result<String, String> {
+    fn query_task(name: &str) -> Result<String, String> {
         let output = Command::new("schtasks")
-            .args(["/Query", "/TN", TASK_NAME, "/FO", "CSV", "/NH"])
+            .args(["/Query", "/TN", name, "/FO", "CSV", "/NH"])
             .output()
             .map_err(|e| format!("schtasks konnte nicht gestartet werden: {}", e))?;
 
         if !output.status.success() {
-            return Err("Task ist nicht installiert.".to_string());
+            return Err("Task ist nicht installiert.".into());
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    pub fn install() -> Result<(), String> {
+    fn install_named(name: &str) -> Result<(), String> {
         let executable = executable_path()?;
 
         run_schtasks(&[
             "/Create",
             "/TN",
-            TASK_NAME,
+            name,
             "/TR",
             &format!("\"{}\"", executable),
             "/SC",
@@ -189,47 +285,157 @@ mod platform {
         ])
     }
 
-    pub fn uninstall() -> Result<(), String> {
-        // Aktuell laufende Instanz beenden.
-        let _ = stop();
+    fn uninstall_named(name: &str) -> Result<(), String> {
+        let _ = stop_named(name);
 
-        run_schtasks(&["/Delete", "/TN", TASK_NAME, "/F"])
+        if !is_installed_named(name) {
+            return Ok(());
+        }
+
+        run_schtasks(&["/Delete", "/TN", name, "/F"])
     }
 
-    pub fn enable() -> Result<(), String> {
-        run_schtasks(&["/Change", "/TN", TASK_NAME, "/ENABLE"])
+    fn enable_named(name: &str) -> Result<(), String> {
+        run_schtasks(&["/Change", "/TN", name, "/ENABLE"])
     }
 
-    pub fn disable() -> Result<(), String> {
-        run_schtasks(&["/Change", "/TN", TASK_NAME, "/DISABLE"])
+    fn disable_named(name: &str) -> Result<(), String> {
+        run_schtasks(&["/Change", "/TN", name, "/DISABLE"])
     }
 
-    pub fn start() -> Result<(), String> {
-        run_schtasks(&["/Run", "/TN", TASK_NAME])
+    fn start_named(name: &str) -> Result<(), String> {
+        run_schtasks(&["/Run", "/TN", name])
     }
 
-    pub fn stop() -> Result<(), String> {
-        run_schtasks(&["/End", "/TN", TASK_NAME])
+    fn stop_named(name: &str) -> Result<(), String> {
+        run_schtasks(&["/End", "/TN", name])
     }
 
-    pub fn is_installed() -> bool {
-        query_task().is_ok()
+    fn is_installed_named(name: &str) -> bool {
+        query_task(name).is_ok()
     }
 
-    pub fn is_enabled() -> Result<bool, String> {
-        let output = query_task()?;
+    fn is_enabled_named(name: &str) -> Result<bool, String> {
+        let output = query_task(name)?;
 
-        // In der CSV-Ausgabe steht der Status der Aufgabe.
-        // "Disabled" bedeutet deaktiviert.
         Ok(!output.contains("Disabled"))
     }
 
-    pub fn is_running() -> Result<bool, String> {
-        let output = query_task()?;
+    fn is_running_named(name: &str) -> Result<bool, String> {
+        let output = query_task(name)?;
 
         Ok(output.contains("Running")
             || output.contains("RUNNING")
             || output.contains("Wird ausgeführt"))
+    }
+
+    pub fn install() -> Result<(), String> {
+        install_named(TASK_NAME)
+    }
+
+    pub fn uninstall() -> Result<(), String> {
+        uninstall_named(TASK_NAME)
+    }
+
+    pub fn enable() -> Result<(), String> {
+        enable_named(TASK_NAME)
+    }
+
+    pub fn disable() -> Result<(), String> {
+        disable_named(TASK_NAME)
+    }
+
+    pub fn start() -> Result<(), String> {
+        start_named(TASK_NAME)
+    }
+
+    pub fn stop() -> Result<(), String> {
+        stop_named(TASK_NAME)
+    }
+
+    pub fn is_installed() -> bool {
+        is_installed_named(TASK_NAME)
+    }
+
+    pub fn is_enabled() -> Result<bool, String> {
+        is_enabled_named(TASK_NAME)
+    }
+
+    pub fn is_running() -> Result<bool, String> {
+        is_running_named(TASK_NAME)
+    }
+
+    pub mod testing {
+        use super::*;
+
+        const TEST_TASK_NAME: &str = "OHG Autologin Test";
+
+        pub fn install() -> Result<(), String> {
+            /*
+             * Der Test-Task startet PowerShell versteckt.
+             *
+             * PowerShell schläft 300 Sekunden.
+             * Dadurch haben wir einen echten laufenden Prozess,
+             * den wir mit start/stop/status testen können.
+             */
+            let action = concat!(
+                "powershell.exe ",
+                "-NoProfile ",
+                "-NonInteractive ",
+                "-WindowStyle Hidden ",
+                "-Command ",
+                "\"Start-Sleep -Seconds 300\""
+            );
+
+            run_schtasks(&[
+                "/Create",
+                "/TN",
+                TEST_TASK_NAME,
+                "/TR",
+                action,
+                "/SC",
+                "ONLOGON",
+                "/F",
+            ])
+        }
+
+        pub fn uninstall() -> Result<(), String> {
+            uninstall_named(TEST_TASK_NAME)
+        }
+
+        pub fn enable() -> Result<(), String> {
+            enable_named(TEST_TASK_NAME)
+        }
+
+        pub fn disable() -> Result<(), String> {
+            disable_named(TEST_TASK_NAME)
+        }
+
+        pub fn start() -> Result<(), String> {
+            start_named(TEST_TASK_NAME)
+        }
+
+        pub fn stop() -> Result<(), String> {
+            stop_named(TEST_TASK_NAME)
+        }
+
+        pub fn is_installed() -> bool {
+            is_installed_named(TEST_TASK_NAME)
+        }
+
+        pub fn is_enabled() -> Result<bool, String> {
+            is_enabled_named(TEST_TASK_NAME)
+        }
+
+        pub fn is_running() -> Result<bool, String> {
+            is_running_named(TEST_TASK_NAME)
+        }
+
+        pub fn cleanup() {
+            let _ = stop();
+            let _ = disable();
+            let _ = uninstall();
+        }
     }
 }
 
@@ -306,4 +512,12 @@ pub fn is_enabled() -> Result<bool, String> {
 
 pub fn is_running() -> Result<bool, String> {
     platform::is_running()
+}
+
+pub mod testing {
+    #[cfg(target_os = "linux")]
+    pub use super::platform::testing::*;
+
+    #[cfg(target_os = "windows")]
+    pub use super::platform::testing::*;
 }

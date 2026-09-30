@@ -15,7 +15,7 @@ pub struct Config {
     pub password: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Credentials {
     pub username: String,
     pub password: String,

@@ -8,14 +8,7 @@ const CURRENT_VERSION: u32 = 1;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub version: u32,
-
-    /// true:
-    /// Passwort ist AES-256-GCM-verschlüsselt.
-    ///
-    /// false:
-    /// Passwort steht im Klartext in der Config.
     pub encrypted: bool,
-
     pub username: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -29,7 +22,6 @@ pub struct Credentials {
 }
 
 impl Config {
-    /// Erstellt eine neue Konfiguration.
     pub fn create<P: AsRef<Path>>(
         path: P,
         username: &str,
@@ -50,7 +42,7 @@ impl Config {
             password.to_string()
         };
 
-        let config = Config {
+        let config = Self {
             version: CURRENT_VERSION,
             encrypted,
             username: username.to_string(),
@@ -60,26 +52,22 @@ impl Config {
         let json = serde_json::to_string_pretty(&config)
             .map_err(|e| format!("Konfiguration konnte nicht serialisiert werden: {}", e))?;
 
-        fs::write(path.as_ref(), json)
-            .map_err(|e| format!("Konfiguration konnte nicht geschrieben werden: {}", e))?;
+        fs::write(path, json)
+            .map_err(|e| format!("Konfiguration konnte nicht gespeichert werden: {}", e))?;
 
         Ok(())
     }
 
-    /// Lädt die Config und gibt fertige Credentials zurück.
-    ///
-    /// Bei encrypted=true wird automatisch entschlüsselt.
-    /// Es erfolgt KEINE Benutzerinteraktion.
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Credentials, String> {
-        let raw = fs::read_to_string(path.as_ref())
+        let raw = fs::read_to_string(path)
             .map_err(|e| format!("Konfiguration konnte nicht gelesen werden: {}", e))?;
 
-        let config: Config =
+        let config: Self =
             serde_json::from_str(&raw).map_err(|e| format!("Ungültiges JSON: {}", e))?;
 
         if config.version != CURRENT_VERSION {
             return Err(format!(
-                "Nicht unterstützte Konfigurationsversion: {}",
+                "Nicht unterstützte Config-Version: {}",
                 config.version
             ));
         }
@@ -90,7 +78,7 @@ impl Config {
 
         let password = config
             .password
-            .ok_or("Kein Password in der Konfiguration vorhanden.")?;
+            .ok_or("Kein Passwort in der Konfiguration vorhanden.")?;
 
         let password = if config.encrypted {
             crypto::decrypt_password(&password)?
@@ -104,10 +92,9 @@ impl Config {
         })
     }
 
-    /// Löscht die gesamte Konfiguration.
     pub fn delete<P: AsRef<Path>>(path: P) -> Result<(), String> {
         if path.as_ref().exists() {
-            fs::remove_file(path.as_ref())
+            fs::remove_file(path)
                 .map_err(|e| format!("Konfiguration konnte nicht gelöscht werden: {}", e))?;
         }
 

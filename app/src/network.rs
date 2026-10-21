@@ -51,17 +51,31 @@ async fn post_client_state(
 
     let response = match client.post(url).form(form_data).send().await {
         Ok(response) => response,
-        Err(_) => return ClientState::Unknown,
+        Err(e) => {
+            eprintln!("HTTP-Request fehlgeschlagen: {e}");
+            return ClientState::Unknown;
+        }
     };
+
+    let status = response.status();
 
     let raw_text = match response.text().await {
         Ok(text) => text,
-        Err(_) => return ClientState::Unknown,
+        Err(e) => {
+            eprintln!("Antwort konnte nicht gelesen werden: {e}");
+            return ClientState::Unknown;
+        }
     };
+
+    println!("HTTP-Status: {status}");
+    println!("Serverantwort: {raw_text}");
 
     match serde_json::from_str::<ApiResponse>(&raw_text) {
         Ok(api_data) => api_data.client_state,
-        Err(_) => ClientState::Unknown,
+        Err(e) => {
+            eprintln!("JSON-Parsing fehlgeschlagen: {e}");
+            ClientState::Unknown
+        }
     }
 }
 

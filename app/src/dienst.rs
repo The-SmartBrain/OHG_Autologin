@@ -30,9 +30,9 @@ async fn check_and_login() -> Result<(), String> {
         network::ClientState::NotAuthorized => {
             println!("Nicht angemeldet. Versuche Login...");
 
-            let credentials = config::Config::load(CONFIG_FILE)?;
-
-            match network::login(&credentials.username, &credentials.password).await {
+            // let credentials = config::Config::load(CONFIG_FILE)?;
+            // ersetzen wieder durch: network::login(&credentials.username, &credentials.password).await
+            match network::login("", "").await {
                 network::ClientState::Authorized => {
                     println!("Login erfolgreich.");
                 }

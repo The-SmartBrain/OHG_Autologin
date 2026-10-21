@@ -1,4 +1,7 @@
 ///! DISCLAMER: Test-Server mit KI-geschrieben
+///
+/// sudo ip addr add 10.80.0.1/24 dev enp4s0
+///
 use axum::{
     Json, Router,
     extract::{ConnectInfo, Form, State},

@@ -1,5 +1,9 @@
+// Prevents Windows Console window when executing
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use clap::{Parser, Subcommand};
 mod dienst;
+mod gui;
 
 #[derive(Parser)]
 #[command(
@@ -24,7 +28,7 @@ async fn main() {
 
     let result = match cli.command {
         Some(Command::Config) => {
-            //Configwindow
+            tokio::task::block_in_place(|| gui::run());
             Ok(())
         }
 
